@@ -21,6 +21,23 @@ namespace caffe {
 using ::google::protobuf::Message;
 using ::boost::filesystem::path;
 
+
+bool MapNameToLabel(const LabelMap& map, const bool strict_check,
+                    std::map<string, int>* name_to_label);
+
+inline bool MapNameToLabel(const LabelMap& map,
+                           std::map<string, int>* name_to_label) {
+  return MapNameToLabel(map, true, name_to_label);
+}
+
+bool MapLabelToName(const LabelMap& map, const bool strict_check,
+                    std::map<int, string>* label_to_name);
+
+inline bool MapLabelToName(const LabelMap& map,
+                           std::map<int, string>* label_to_name) {
+  return MapLabelToName(map, true, label_to_name);
+}
+
 inline void MakeTempDir(string* temp_dirname) {
   temp_dirname->clear();
   const path& model =

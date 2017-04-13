@@ -5,34 +5,9 @@
 
 #include "caffe/layers/detection_loss_layer.hpp"
 #include "caffe/util/math_functions.hpp"
+#include "caffe/util/bbox_util.hpp"
 
 namespace caffe {
-
-template <typename Dtype>
-Dtype Overlap(Dtype x1, Dtype w1, Dtype x2, Dtype w2) {
-  Dtype left = std::max(x1 - w1 / 2, x2 - w2 / 2);
-  Dtype right = std::min(x1 + w1 / 2, x2 + w2 / 2);
-  return right - left;
-}
-
-template <typename Dtype>
-Dtype Calc_iou(const vector<Dtype>& box, const vector<Dtype>& truth) {
-  Dtype w = Overlap(box[0], box[2], truth[0], truth[2]);
-  Dtype h = Overlap(box[1], box[3], truth[1], truth[3]);
-  if (w < 0 || h < 0) return 0;
-  Dtype inter_area = w * h;
-  Dtype union_area = box[2] * box[3] + truth[2] * truth[3] - inter_area;
-  return inter_area / union_area;
-}
-
-template <typename Dtype>
-Dtype Calc_rmse(const vector<Dtype>& box, const vector<Dtype>& truth) {
-  return sqrt(pow(box[0]-truth[0], 2) +
-              pow(box[1]-truth[1], 2) +
-              pow(box[2]-truth[2], 2) +
-              pow(box[3]-truth[3], 2));
-}
-
 template <typename Dtype>
 void DetectionLossLayer<Dtype>::LayerSetUp(
     const vector<Blob<Dtype>*>& bottom, const vector<Blob<Dtype>*>& top) {

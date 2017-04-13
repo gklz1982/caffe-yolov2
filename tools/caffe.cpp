@@ -80,6 +80,9 @@ static BrewFunction GetBrewFunction(const caffe::string& name) {
 
 // Parse GPU ids or use all available devices
 static void get_gpus(vector<int>* gpus) {
+#ifdef CPU_ONLY
+	return;
+#endif
   if (FLAGS_gpu == "all") {
     int count = 0;
 #ifndef CPU_ONLY
@@ -173,6 +176,7 @@ int train() {
   }
 
   vector<int> gpus;
+  
   get_gpus(&gpus);
   if (gpus.size() == 0) {
     LOG(INFO) << "Use CPU.";
@@ -224,8 +228,127 @@ int train() {
 }
 RegisterBrewFunction(train);
 
-
+using namespace std;
 // Test: score a model.
+template <typename T>
+bool SortScorePairDescend(const pair<float, T>& pair1,
+                          const pair<float, T>& pair2) {
+  return pair1.first > pair2.first;
+}
+
+// Explicit initialization.
+template bool SortScorePairDescend(const pair<float, int>& pair1,
+                                   const pair<float, int>& pair2);
+template bool SortScorePairDescend(const pair<float, pair<int, int> >& pair1,
+                                   const pair<float, pair<int, int> >& pair2);
+void CumSum(const vector<pair<float, int> >& pairs, vector<int>* cumsum) {
+  // Sort the pairs based on first item of the pair.
+  vector<pair<float, int> > sort_pairs = pairs;
+  std::stable_sort(sort_pairs.begin(), sort_pairs.end(),
+                   SortScorePairDescend<int>);
+
+  cumsum->clear();
+  for (int i = 0; i < sort_pairs.size(); ++i) {
+    if (i == 0) {
+      cumsum->push_back(sort_pairs[i].second);
+    } else {
+      cumsum->push_back(cumsum->back() + sort_pairs[i].second);
+    }
+  }
+}
+void ComputeAP(const vector<pair<float, int> >& tp, const int num_pos,
+               const vector<pair<float, int> >& fp, const string ap_version,
+               vector<float>* prec, vector<float>* rec, float* ap) {
+  const float eps = 1e-6;
+  CHECK_EQ(tp.size(), fp.size()) << "tp must have same size as fp.";
+  const int num = tp.size();
+  // Make sure that tp and fp have complement value.
+  for (int i = 0; i < num; ++i) {
+    CHECK_LE(fabs(tp[i].first - fp[i].first), eps);
+    CHECK_GE(tp[i].second, 0);
+    CHECK_GE(fp[i].second, 0);
+  }
+  prec->clear();
+  rec->clear();
+  *ap = 0;
+  if (tp.size() == 0 || num_pos == 0) {
+    return;
+  }
+
+  // Compute cumsum of tp.
+  vector<int> tp_cumsum;
+  CumSum(tp, &tp_cumsum);
+  CHECK_EQ(tp_cumsum.size(), num);
+
+  // Compute cumsum of fp.
+  vector<int> fp_cumsum;
+  CumSum(fp, &fp_cumsum);
+  CHECK_EQ(fp_cumsum.size(), num);
+
+  // Compute precision.
+  for (int i = 0; i < num; ++i) {
+    prec->push_back(static_cast<float>(tp_cumsum[i]) /
+                    (tp_cumsum[i] + fp_cumsum[i]));
+  }
+
+  // Compute recall.
+  for (int i = 0; i < num; ++i) {
+    CHECK_LE(tp_cumsum[i], num_pos);
+    rec->push_back(static_cast<float>(tp_cumsum[i]) / num_pos);
+  }
+
+  // for (int i = 0; i < num; ++i) {
+  //   std::cout << (*prec)[i] << std::endl;
+  //   std::cout << (*rec)[i] << std::endl;
+  // }
+
+  if (ap_version == "11point") {
+    // VOC2007 style for computing AP.
+    vector<float> max_precs(11, 0.);
+    int start_idx = num - 1;
+    for (int j = 10; j >= 0; --j) {
+      for (int i = start_idx; i >= 0 ; --i) {
+        if ((*rec)[i] < j / 10.) {
+          start_idx = i;
+          if (j > 0) {
+            max_precs[j-1] = max_precs[j];
+          }
+          break;
+        } else {
+          if (max_precs[j] < (*prec)[i]) {
+            max_precs[j] = (*prec)[i];
+          }
+        }
+      }
+    }
+    for (int j = 10; j >= 0; --j) {
+      *ap += max_precs[j] / 11;
+    }
+  } else if (ap_version == "MaxIntegral") {
+    // VOC2012 or ILSVRC style for computing AP.
+    float cur_rec = rec->back();
+    float cur_prec = prec->back();
+    for (int i = num - 2; i >= 0; --i) {
+      cur_prec = std::max<float>((*prec)[i], cur_prec);
+      if (fabs(cur_rec - (*rec)[i]) > eps) {
+        *ap += cur_prec * fabs(cur_rec - (*rec)[i]);
+      }
+      cur_rec = (*rec)[i];
+    }
+    *ap += cur_rec * cur_prec;
+  } else if (ap_version == "Integral") {
+    // Natural integral.
+    float prev_rec = 0.;
+    for (int i = 0; i < num; ++i) {
+      if (fabs((*rec)[i] - prev_rec) > eps) {
+        *ap += (*prec)[i] * fabs((*rec)[i] - prev_rec);
+      }
+      prev_rec = (*rec)[i];
+    }
+  } else {
+    LOG(FATAL) << "Unknown ap_version: " << ap_version;
+  }
+}
 int test() {
   CHECK_GT(FLAGS_model.size(), 0) << "Need a model definition to score.";
   CHECK_GT(FLAGS_weights.size(), 0) << "Need model weights to score.";
@@ -251,6 +374,11 @@ int test() {
   caffe_net.CopyTrainedLayersFrom(FLAGS_weights);
   LOG(INFO) << "Running for " << FLAGS_iterations << " iterations.";
 
+
+  map<int, map<int, vector<pair<float, int> > > > all_true_pos;
+  map<int, map<int, vector<pair<float, int> > > > all_false_pos;
+  map<int, map<int, int> > all_num_pos;
+
   vector<int> test_score_output_id;
   vector<float> test_score;
   float loss = 0;
@@ -261,21 +389,86 @@ int test() {
     loss += iter_loss;
     int idx = 0;
     for (int j = 0; j < result.size(); ++j) {
+      CHECK_EQ(result[j]->width(), 5);
       const float* result_vec = result[j]->cpu_data();
-      for (int k = 0; k < result[j]->count(); ++k, ++idx) {
-        const float score = result_vec[k];
-        if (i == 0) {
-          test_score.push_back(score);
-          test_score_output_id.push_back(j);
+      int num_det = result[j]->height();
+      for (int k = 0; k < num_det; ++k) {
+        int item_id = static_cast<int>(result_vec[k * 5]);
+        int label = static_cast<int>(result_vec[k * 5 + 1]);
+        if (item_id == -1) {
+          // Special row of storing number of positives for a label.
+          if (all_num_pos[j].find(label) == all_num_pos[j].end()) {
+            all_num_pos[j][label] = static_cast<int>(result_vec[k * 5 + 2]);
+          } else {
+            all_num_pos[j][label] += static_cast<int>(result_vec[k * 5 + 2]);
+          }
         } else {
-          test_score[idx] += score;
+          // Normal row storing detection status.
+          float score = result_vec[k * 5 + 2];
+          int tp = static_cast<int>(result_vec[k * 5 + 3]);
+          int fp = static_cast<int>(result_vec[k * 5 + 4]);
+          if (tp == 0 && fp == 0) {
+            // Ignore such case. It happens when a detection bbox is matched to
+            // a difficult gt bbox and we don't evaluate on difficult gt bbox.
+            continue;
+          }
+          all_true_pos[j][label].push_back(std::make_pair(score, tp));
+          all_false_pos[j][label].push_back(std::make_pair(score, fp));
         }
-        const std::string& output_name = caffe_net.blob_names()[
-            caffe_net.output_blob_indices()[j]];
-        LOG(INFO) << "Batch " << i << ", " << output_name << " = " << score;
       }
     }
   }
+
+  for (int i = 0; i < all_true_pos.size(); ++i) {
+    if (all_true_pos.find(i) == all_true_pos.end()) {
+      LOG(FATAL) << "Missing output_blob true_pos: " << i;
+    }
+    const map<int, vector<pair<float, int> > >& true_pos =
+        all_true_pos.find(i)->second;
+    if (all_false_pos.find(i) == all_false_pos.end()) {
+      LOG(FATAL) << "Missing output_blob false_pos: " << i;
+    }
+    const map<int, vector<pair<float, int> > >& false_pos =
+        all_false_pos.find(i)->second;
+    if (all_num_pos.find(i) == all_num_pos.end()) {
+      LOG(FATAL) << "Missing output_blob num_pos: " << i;
+    }
+    const map<int, int>& num_pos = all_num_pos.find(i)->second;
+    map<int, float> APs;
+    float mAP = 0.;
+    // Sort true_pos and false_pos with descend scores.
+    for (map<int, int>::const_iterator it = num_pos.begin();
+         it != num_pos.end(); ++it) {
+      int label = it->first;
+      int label_num_pos = it->second;
+      if (true_pos.find(label) == true_pos.end()) {
+        LOG(WARNING) << "Missing true_pos for label: " << label;
+        continue;
+      }
+      const vector<pair<float, int> >& label_true_pos =
+          true_pos.find(label)->second;
+      if (false_pos.find(label) == false_pos.end()) {
+        LOG(WARNING) << "Missing false_pos for label: " << label;
+        continue;
+      }
+      const vector<pair<float, int> >& label_false_pos =
+          false_pos.find(label)->second;
+      vector<float> prec, rec;
+      ComputeAP(label_true_pos, label_num_pos, label_false_pos,
+                "11point", &prec, &rec, &(APs[label]));
+      mAP += APs[label];
+      if (true) {
+        LOG(INFO) << "class" << label << ": " << APs[label];
+      }
+    }
+    mAP /= num_pos.size();
+    //const int output_blob_index = caffe_net->output_blob_indices()[j];
+    //const string& output_name = caffe_net->blob_names()[output_blob_index];
+    LOG(INFO) << "    Test net output #" << i << ": "<< " = " << mAP;
+  }
+
+
+
   loss /= FLAGS_iterations;
   LOG(INFO) << "Loss: " << loss;
   for (int i = 0; i < test_score.size(); ++i) {

@@ -54,7 +54,6 @@ static void get_gpus(vector<int>* gpus) {
     CHECK_EQ(gpus->size(), 0);
   }
 }
-
 template <typename T>
 bool SortScorePairDescend(const pair<float, T>& pair1,
                           const pair<float, T>& pair2) {
@@ -66,7 +65,6 @@ template bool SortScorePairDescend(const pair<float, int>& pair1,
                                    const pair<float, int>& pair2);
 template bool SortScorePairDescend(const pair<float, pair<int, int> >& pair1,
                                    const pair<float, pair<int, int> >& pair2);
-
 void CumSum(const vector<pair<float, int> >& pairs, vector<int>* cumsum) {
   // Sort the pairs based on first item of the pair.
   vector<pair<float, int> > sort_pairs = pairs;
@@ -82,7 +80,6 @@ void CumSum(const vector<pair<float, int> >& pairs, vector<int>* cumsum) {
     }
   }
 }
-
 void ComputeAP(const vector<pair<float, int> >& tp, const int num_pos,
                const vector<pair<float, int> >& fp, const string ap_version,
                vector<float>* prec, vector<float>* rec, float* ap) {
@@ -176,7 +173,6 @@ void ComputeAP(const vector<pair<float, int> >& tp, const int num_pos,
     LOG(FATAL) << "Unknown ap_version: " << ap_version;
   }
 }
-
 // Test: score a model.
 int test_detection() {
   CHECK_GT(FLAGS_model.size(), 0) << "Need a model definition to score.";

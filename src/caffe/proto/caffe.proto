@@ -408,6 +408,7 @@ message LayerParameter {
   optional ReLUParameter relu_param = 123;
   optional ReshapeParameter reshape_param = 133;
   optional ReorgParameter reorg_param = 147;
+  optional QuantizationParameter quantization_param = 148;
   optional ScaleParameter scale_param = 142;
   optional SigmoidParameter sigmoid_param = 124;
   optional SoftmaxParameter softmax_param = 125;
@@ -417,6 +418,35 @@ message LayerParameter {
   optional ThresholdParameter threshold_param = 128;
   optional TileParameter tile_param = 138;
   optional WindowDataParameter window_data_param = 129;
+}
+
+
+// Message for layers with reduced word with arithmetic
+message QuantizationParameter{
+  enum Precision {
+    DYNAMIC_FIXED_POINT = 0;
+    MINIFLOAT = 1;
+    INTEGER_POWER_OF_2_WEIGHTS = 2;
+  }
+  optional Precision precision = 1 [default = DYNAMIC_FIXED_POINT];
+  enum Rounding {
+    NEAREST = 0;
+    STOCHASTIC = 1;
+  }
+  optional Rounding rounding_scheme = 2 [default = NEAREST];
+  // Dynamic fixed point word width
+  optional uint32 bw_layer_in = 3 [default = 32];
+  optional uint32 bw_layer_out = 4 [default = 32];
+  optional uint32 bw_params = 5 [default = 32];
+  optional int32 fl_layer_in = 6 [default = 16];
+  optional int32 fl_layer_out = 7 [default = 16];
+  optional int32 fl_params = 8 [default = 16];
+  // Minifloat word width
+  optional uint32 mant_bits = 9 [default = 23];
+  optional uint32 exp_bits = 10 [default = 8];
+  // Integer-power-of-two weights
+  optional int32 exp_min = 11 [default = -8];
+  optional int32 exp_max = 12 [default = -1];
 }
 
 // Message that stores parameters used to apply transformation

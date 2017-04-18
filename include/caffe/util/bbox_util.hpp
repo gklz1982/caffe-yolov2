@@ -30,8 +30,8 @@ void IntersectBBox(const NormalizedBBox& bbox1, const NormalizedBBox& bbox2,
 float JaccardOverlap(const NormalizedBBox& bbox1, const NormalizedBBox& bbox2,
                      const bool normalized);
 void CumSum(const vector<pair<float, int> >& pairs, vector<int>* cumsum);
-void ComputeAP(const vector<pair<float, int> >& tp, const int num_pos,
-               const vector<pair<float, int> >& fp, const string ap_version,
+void ComputeAP(const vector<pair<float, int> >& tp, int num_pos,
+               const vector<pair<float, int> >& fp, string ap_version,
                vector<float>* prec, vector<float>* rec, float* ap);
                      
 template <typename Dtype>

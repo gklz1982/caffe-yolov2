@@ -96,8 +96,8 @@ void CumSum(const vector<pair<float, int> >& pairs, vector<int>* cumsum) {
     }
   }
 }
-void ComputeAP(const vector<pair<float, int> >& tp, const int num_pos,
-               const vector<pair<float, int> >& fp, const string ap_version,
+void ComputeAP(const vector<pair<float, int> >& tp, int num_pos,
+               const vector<pair<float, int> >& fp, string ap_version,
                vector<float>* prec, vector<float>* rec, float* ap) {
   const float eps = 1e-6;
   CHECK_EQ(tp.size(), fp.size()) << "tp must have same size as fp.";

@@ -193,6 +193,12 @@ void Quantization::TestDetection(const int iterations, Net<float>* caffe_net,
   for (int i = 0; i < iterations; ++i) {
     float iter_loss;
     const vector<Blob<float>*>& result =  caffe_net->Forward(&iter_loss);
+    // Find maximal values in network.
+    if(do_stats) {
+      caffe_net->RangeInLayers(&layer_names_, &max_in_, &max_out_,
+          &max_params_);
+      continue;
+    }
     loss += iter_loss;
     for (int j = 0; j < result.size(); ++j) {
       CHECK_EQ(result[j]->width(), 5);
